@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="sr-Latn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QR kod za uplatnicu</title>
+<meta name="description" content="Pretvara PDF naloga za prenos u NBS IPS QR kod. Sve se obrađuje u pregledaču.">
+<style>
+  :root {
+    --desk: #E6EAEE;
+    --paper: #FFFFFF;
+    --ink: #000000;
+    --pen: #1F3FA8;
+    --muted: #57606B;
+    --error: #B3202A;
+    --ok: #1C7339;
+    --ok-bg: #E3F3E8;
+    --error-bg: #FBE7E8;
+    --line: 1.5px;
+    --sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --serif: "Times New Roman", Times, serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --desk: #14171B;
+      --paper: #1E2329;
+      --ink: #E6E8EB;
+      --pen: #9DB3FF;
+      --muted: #9AA3AD;
+      --error: #FF8A8A;
+      --ok: #74D394;
+      --ok-bg: #173323;
+      --error-bg: #3A1D20;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --desk: #14171B; --paper: #1E2329; --ink: #E6E8EB; --pen: #9DB3FF;
+    --muted: #9AA3AD; --error: #FF8A8A; --ok: #74D394;
+    --ok-bg: #173323; --error-bg: #3A1D20; color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--desk);
+    color: var(--ink);
+    font: 16px/1.5 var(--sans);
+  }
+  main { max-width: 1120px; margin: 0 auto; padding: 40px 16px 64px; }
+
+  h1 { font-size: 28px; line-height: 1.2; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .intro { max-width: 62ch; margin: 0 0 24px; color: var(--muted); }
+
+  /* Loader */
+  .loader {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px;
+    padding: 20px; border: var(--line) dashed var(--ink); background: var(--paper);
+  }
+  .loader.drag { outline: 3px solid var(--pen); outline-offset: 2px; }
+  .loader p { margin: 0; flex: 1 1 260px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  button, .file-btn {
+    font: 600 15px/1 var(--sans);
+    padding: 10px 14px;
+    border: var(--line) solid var(--ink);
+    background: var(--paper);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  button.primary, .file-btn { background: var(--ink); color: var(--paper); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button:hover:not(:disabled), .file-btn:hover { outline: 2px solid var(--pen); outline-offset: 1px; }
+  :focus-visible { outline: 3px solid var(--pen); outline-offset: 2px; }
+  .file-btn input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .file-btn:focus-within { outline: 3px solid var(--pen); outline-offset: 2px; }
+
+  .notes { list-style: none; margin: 14px 0 0; padding: 0; font-size: 15px; }
+  .notes li.bad { color: var(--error); }
+
+  /* Slip */
+  .slips { display: grid; gap: 28px; margin-top: 32px; }
+  .slip { background: var(--paper); padding: 18px 20px 22px; box-shadow: 0 1px 0 var(--ink); }
+  .slip-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .slip-source { color: var(--muted); font-size: 14px; flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+  .slip-title { order: 2; margin: 0; font-size: 19px; font-weight: 700; }
+  .slip-head .remove { order: 3; padding: 6px 10px; font-size: 14px; }
+
+  .slip-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 230px;
+    gap: 0 28px;
+  }
+  .col-left { padding-right: 28px; border-right: var(--line) solid var(--ink); }
+  /* Fields in a row share label/box/error tracks, so boxes line up even when a label wraps. */
+  .row { display: grid; grid-template-rows: auto auto auto; column-gap: 10px; margin-bottom: 12px; }
+  .row.top { grid-template-columns: 5.5em 5em minmax(0, 1fr); }
+  .row.ref { grid-template-columns: 3.6em minmax(0, 1fr); }
+  .row .field { display: grid; grid-row: span 3; grid-template-rows: subgrid; margin-bottom: 0; }
+  .row .field label { align-self: end; }
+
+  .field { display: flex; flex-direction: column; margin-bottom: 12px; min-width: 0; }
+  .field label { font: 700 15px/1.2 var(--sans); margin-bottom: 4px; }
+  .field input, .field textarea {
+    width: 100%;
+    font: 17px/1.3 var(--serif);
+    color: var(--pen);
+    background: transparent;
+    border: 2px solid var(--ink);
+    border-radius: 0;
+    padding: 6px 8px;
+    text-align: center;
+  }
+  .field textarea { resize: none; min-height: 3.6em; }
+  .field input:focus, .field textarea:focus { outline: 3px solid var(--pen); outline-offset: 0; }
+  .field.bad input, .field.bad textarea { border-color: var(--error); }
+  .field .err { color: var(--error); font-size: 13px; line-height: 1.3; margin-top: 3px; }
+  .field .err:empty, .field .hint:empty { display: none; }
+  .field .hint { color: var(--muted); font-size: 13px; line-height: 1.3; margin-top: 3px; }
+
+  /* QR panel */
+  .qr-panel { display: flex; flex-direction: column; gap: 10px; }
+  .qr {
+    background: #FFFFFF;
+    aspect-ratio: 1;
+    display: grid; place-items: center;
+    border: var(--line) solid var(--ink);
+  }
+  .qr svg { width: 100%; height: 100%; display: block; }
+  .qr .placeholder { color: #57606B; font-size: 14px; text-align: center; padding: 16px; }
+  .qr-panel .actions button { flex: 1 1 auto; }
+  .nbs-status { font-size: 14px; line-height: 1.35; margin: 0; overflow-wrap: anywhere; }
+  .nbs-status:empty { display: none; }
+  .nbs-status.pending { color: var(--muted); }
+  .nbs-status.ok, .nbs-status.bad, .nbs-status.failed { padding: 8px 10px; font-weight: 600; border-left: 4px solid; }
+  .nbs-status.ok { color: var(--ok); background: var(--ok-bg); }
+  .nbs-status.bad, .nbs-status.failed { color: var(--error); background: var(--error-bg); }
+  .nbs-status.ok::before { content: "✓ "; }
+  .nbs-status.bad::before, .nbs-status.failed::before { content: "✕ "; }
+  .slip[data-nbs="ok"] .qr { border: 3px solid var(--ok); }
+  .slip[data-nbs="bad"] .qr { border: 3px solid var(--error); }
+
+  /* Tooltip for the NBS button: shown on hover and keyboard focus. */
+  .tip { position: relative; display: flex; flex: 1 1 auto; }
+  .tip button { flex: 1 1 auto; }
+  .tip-text {
+    position: absolute; top: calc(100% + 8px); right: 0; z-index: 2;
+    width: 240px; padding: 8px 10px;
+    background: var(--ink); color: var(--paper);
+    font-size: 13px; line-height: 1.4; font-weight: 400;
+    visibility: hidden; opacity: 0; transition: opacity .12s;
+    pointer-events: none;
+  }
+  .tip:hover .tip-text, .tip:focus-within .tip-text { visibility: visible; opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .tip-text { transition: none; } }
+  .payload summary { cursor: pointer; font-size: 14px; color: var(--muted); }
+  .payload code {
+    display: block; margin-top: 6px; font-size: 12px; line-height: 1.45;
+    overflow-wrap: anywhere; user-select: all;
+  }
+
+  @media (max-width: 900px) {
+    .slip-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .qr-panel { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; margin-top: 8px; }
+    .qr { width: 230px; }
+    .qr-panel .side { flex: 1 1 200px; display: flex; flex-direction: column; gap: 10px; }
+  }
+  @media (max-width: 620px) {
+    main { padding-top: 24px; }
+    .slip { padding: 16px; }
+    .slip-body { grid-template-columns: minmax(0, 1fr); }
+    .col-left { padding-right: 0; border-right: 0; border-bottom: var(--line) solid var(--ink); margin-bottom: 14px; padding-bottom: 2px; }
+    .qr { width: 100%; max-width: 320px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>QR kod za uplatnicu</h1>
+  <p class="intro">
+    Učitaj PDF naloga za prenos i za svaku popunjenu uplatnicu dobićeš IPS QR kod
+    koji skeniraš aplikacijom banke. PDF se čita u ovom pregledaču i ne šalje se nigde.
+  </p>
+
+  <section class="loader" id="loader" aria-label="Učitavanje PDF-a">
+    <p>Prevuci PDF ovde ili ga izaberi. Može više fajlova odjednom.</p>
+    <div class="actions">
+      <label class="file-btn">Izaberi PDF<input type="file" id="file" accept="application/pdf,.pdf" multiple></label>
+      <button type="button" id="add-empty">Dodaj praznu uplatnicu</button>
+    </div>
+  </section>
+  <ul class="notes" id="notes" aria-live="polite"></ul>
+
+  <div class="slips" id="slips"></div>
+
+</main>
+
+<template id="slip-template">
+  <article class="slip">
+    <header class="slip-head">
+      <span class="slip-source"></span>
+      <h2 class="slip-title">nalog za prenos</h2>
+      <button type="button" class="remove">Ukloni</button>
+    </header>
+    <div class="slip-body">
+      <div class="col-left">
+        <div class="field" data-for="platilac"><label>platilac</label><textarea rows="2" data-field="platilac"></textarea><span class="hint"></span><span class="err"></span></div>
+        <div class="field" data-for="svrha"><label>svrha plaćanja</label><textarea rows="2" data-field="svrha"></textarea><span class="hint"></span><span class="err"></span></div>
+        <div class="field" data-for="primalac"><label>primalac</label><textarea rows="2" data-field="primalac"></textarea><span class="hint"></span><span class="err"></span></div>
+      </div>
+      <div class="col-right">
+        <div class="row top">
+          <div class="field" data-for="sifra"><label>šifra plaćanja</label><input data-field="sifra" inputmode="numeric" autocomplete="off"><span class="err"></span></div>
+          <div class="field" data-for="valuta"><label>valuta</label><input data-field="valuta" autocomplete="off"><span class="err"></span></div>
+          <div class="field" data-for="iznos"><label>iznos</label><input data-field="iznos" inputmode="decimal" autocomplete="off"><span class="err"></span></div>
+        </div>
+        <div class="field" data-for="racunPrimaoca"><label>račun primaoca</label><input data-field="racunPrimaoca" autocomplete="off"><span class="err"></span></div>
+        <div class="row ref">
+          <div class="field" data-for="modelOdobrenja"><label>model</label><input data-field="modelOdobrenja" inputmode="numeric" autocomplete="off"><span class="err"></span></div>
+          <div class="field" data-for="pozivOdobrenja"><label>poziv na broj (odobrenja)</label><input data-field="pozivOdobrenja" autocomplete="off"><span class="err"></span></div>
+        </div>
+      </div>
+      <div class="qr-panel">
+        <div class="qr" role="img"></div>
+        <div class="side">
+          <div class="actions">
+            <button type="button" class="primary download">Preuzmi PNG</button>
+            <span class="tip">
+              <button type="button" class="check">Proveri na NBS</button>
+              <span class="tip-text" role="tooltip">Šalje sadržaj ovog koda Narodnoj banci Srbije, koja proverava da li je QR kod napravljen po NBS IPS standardu.</span>
+            </span>
+          </div>
+          <p class="nbs-status" aria-live="polite"></p>
+          <details class="payload"><summary>Sadržaj koda</summary><code></code></details>
+        </div>
+      </div>
+    </div>
+  </article>
+</template>
+
+<script src="vendor/pdf-lib.min.js"></script>
+<script src="vendor/qrcode.js"></script>
+<script src="ips.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  qrcode.stringToBytes = qrcode.stringToBytesFuncs["UTF-8"];
+
+  const QR_BORDER = 4; // quiet zone, in modules
+  const PNG_SCALE = 10; // pixels per module
+
+  const $ = (sel, el = document) => el.querySelector(sel);
+  const slipsEl = $("#slips");
+  const notesEl = $("#notes");
+  const template = $("#slip-template");
+  let nextId = 1;
+
+  function makeQr(payload) {
+    const qr = qrcode(0, "M");
+    qr.addData(payload, "Byte");
+    qr.make();
+    return qr;
+  }
+
+  function qrSvg(qr) {
+    const n = qr.getModuleCount();
+    const size = n + 2 * QR_BORDER;
+    let d = "";
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        if (qr.isDark(r, c)) d += `M${c + QR_BORDER} ${r + QR_BORDER}h1v1h-1z`;
+      }
+    }
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges">` +
+      `<rect width="${size}" height="${size}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+  }
+
+  function downloadPng(payload, filename) {
+    const qr = makeQr(payload);
+    const n = qr.getModuleCount();
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = (n + 2 * QR_BORDER) * PNG_SCALE;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#000";
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        if (qr.isDark(r, c)) ctx.fillRect((c + QR_BORDER) * PNG_SCALE, (r + QR_BORDER) * PNG_SCALE, PNG_SCALE, PNG_SCALE);
+      }
+    }
+    canvas.toBlob((blob) => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }, "image/png");
+  }
+
+  function readSlip(card) {
+    const slip = IPS.emptySlip();
+    card.querySelectorAll("[data-field]").forEach((el) => { slip[el.dataset.field] = el.value; });
+    return slip;
+  }
+
+  function setStatus(card, text, kind, detail) {
+    const el = $(".nbs-status", card);
+    el.textContent = text;
+    el.title = detail || "";
+    el.className = "nbs-status" + (kind ? " " + kind : "");
+    card.dataset.nbs = kind || "";
+  }
+
+  function update(card) {
+    const slip = readSlip(card);
+    // Over-long text is always cut to the IPS limit; say so on the field.
+    const { payload, errors } = IPS.validateSlip(slip, { truncate: true });
+    for (const [field, max] of Object.entries(IPS.TEXT_LIMITS)) {
+      const cut = [...IPS.clean(slip[field])].length > max;
+      $(`.field[data-for="${field}"] .hint`, card).textContent = cut ? `U QR kodu je samo prvih ${max} znakova.` : "";
+    }
+
+    card.querySelectorAll(".field").forEach((f) => {
+      f.classList.remove("bad");
+      $(".err", f).textContent = "";
+      $("[data-field]", f).removeAttribute("aria-invalid");
+    });
+    for (const e of errors) {
+      const f = $(`.field[data-for="${e.field}"]`, card);
+      if (!f) continue;
+      f.classList.add("bad");
+      $("[data-field]", f).setAttribute("aria-invalid", "true");
+      const err = $(".err", f);
+      err.textContent = err.textContent ? `${err.textContent}; ${e.message}` : e.message;
+    }
+
+    card.payload = payload;
+    const qrEl = $(".qr", card);
+    if (payload) {
+      qrEl.innerHTML = qrSvg(makeQr(payload));
+      qrEl.setAttribute("aria-label", "IPS QR kod za ovu uplatnicu");
+    } else {
+      const n = errors.length;
+      qrEl.innerHTML = `<p class="placeholder">QR kod će se pojaviti kad ${n === 1 ? "označeno polje bude ispravno" : "označena polja budu ispravna"}.</p>`;
+      qrEl.setAttribute("aria-label", "QR kod još nije dostupan");
+    }
+    $(".payload code", card).textContent = payload || "";
+    $(".payload", card).hidden = !payload;
+    $(".download", card).disabled = !payload;
+    $(".check", card).disabled = !payload;
+    setStatus(card, "");
+  }
+
+  function addSlip(values, { source, filename }) {
+    const card = template.content.firstElementChild.cloneNode(true);
+    const id = nextId++;
+    card.querySelectorAll(".field").forEach((f) => {
+      const input = $("[data-field]", f);
+      input.id = `${f.dataset.for}-${id}`;
+      $("label", f).htmlFor = input.id;
+      input.value = values[f.dataset.for] || "";
+      if (IPS.TEXT_LIMITS[f.dataset.for]) input.maxLength = IPS.TEXT_LIMITS[f.dataset.for];
+    });
+    $(".slip-source", card).textContent = source;
+    $(".tip-text", card).id = `nbs-tip-${id}`;
+    $(".check", card).setAttribute("aria-describedby", `nbs-tip-${id}`);
+
+    card.addEventListener("input", () => update(card));
+    $(".remove", card).addEventListener("click", () => card.remove());
+    $(".download", card).addEventListener("click", () => card.payload && downloadPng(card.payload, filename));
+    const checkBtn = $(".check", card);
+    checkBtn.addEventListener("click", async () => {
+      const payload = card.payload;
+      if (!payload) return;
+      checkBtn.disabled = true;
+      setStatus(card, "Proveravam na NBS…", "pending");
+      const { ok, message } = await IPS.validateOnline(payload);
+      if (card.payload !== payload) return; // edited while waiting; update() already reset the status
+      checkBtn.disabled = false;
+      if (ok === true) setStatus(card, "NBS potvrđuje da je kod ispravan.", "ok");
+      else if (ok === false) setStatus(card, `NBS kaže da kod nije ispravan: ${message}`, "bad");
+      else setStatus(card, "Provera nije obavljena jer NBS nije odgovorio. Proveri internet vezu i pokušaj ponovo.", "failed", message);
+    });
+
+    slipsEl.append(card);
+    update(card);
+    return card;
+  }
+
+  function note(text, bad) {
+    const li = document.createElement("li");
+    li.textContent = text;
+    if (bad) li.className = "bad";
+    notesEl.append(li);
+  }
+
+  function countSlips(n) {
+    if (n % 10 === 1 && n % 100 !== 11) return `učitana ${n} uplatnica`;
+    if ([2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100)) return `učitane ${n} uplatnice`;
+    return `učitano ${n} uplatnica`;
+  }
+
+  async function loadFiles(files) {
+    notesEl.replaceChildren();
+    let first = null;
+    for (const file of files) {
+      if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") {
+        note(`${file.name} nije PDF.`, true);
+        continue;
+      }
+      try {
+        const slips = await IPS.parsePdf(PDFLib, new Uint8Array(await file.arrayBuffer()));
+        const stem = file.name.replace(/\.pdf$/i, "");
+        let added = 0;
+        slips.forEach((s, i) => {
+          if (IPS.isEmptySlip(s)) return;
+          const card = addSlip(s, { source: `${file.name}, uplatnica ${i + 1}`, filename: `${stem}_slip${i + 1}.png` });
+          first = first || card;
+          added++;
+        });
+        if (added) note(`${file.name}: ${countSlips(added)}.`);
+        else note(`${file.name}: nema popunjenih uplatnica. Popuni polja u PDF-u ili dodaj praznu uplatnicu.`, true);
+      } catch (e) {
+        note(`${file.name} nije moguće pročitati: ${e.message}. Podržani su PDF-ovi sa poljima za popunjavanje.`, true);
+      }
+    }
+    if (first) first.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  }
+
+  $("#file").addEventListener("change", (e) => {
+    loadFiles([...e.target.files]);
+    e.target.value = "";
+  });
+
+  $("#add-empty").addEventListener("click", () => {
+    const card = addSlip({ valuta: "RSD" }, { source: "Ručno popunjena", filename: `uplatnica_${nextId}.png` });
+    $("[data-field]", card).focus();
+  });
+
+  // Accept drops anywhere on the page, so a missed drop doesn't open the PDF in the tab.
+  const loader = $("#loader");
+  let dragDepth = 0;
+  window.addEventListener("dragenter", (e) => { e.preventDefault(); dragDepth++; loader.classList.add("drag"); });
+  window.addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; loader.classList.remove("drag"); } });
+  window.addEventListener("dragover", (e) => e.preventDefault());
+  window.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dragDepth = 0;
+    loader.classList.remove("drag");
+    if (e.dataTransfer.files.length) loadFiles([...e.dataTransfer.files]);
+  });
+})();
+</script>
+</body>
+</html>

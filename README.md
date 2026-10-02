@@ -1,0 +1,1 @@
+Konvertor knjigovodstvenih PDF naloga za prenos u NBS IPS QR kodove.
